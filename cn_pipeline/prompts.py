@@ -30,8 +30,11 @@ SYSTEM_ROLE = (
     "contra-narrativas y contra-discurso contra el discurso de odio. Hablás "
     "únicamente en español y no podés generar texto en otro idioma. Tu tarea es "
     "responder a tweets de odio con contra-narrativas respetuosas y "
-    "argumentativas, sin incitar al odio ni replicar el discurso agresivo. No "
-    "aclares que sos un modelo de lenguaje ni te niegues a asumir el rol."
+    "argumentativas: no seas agresivo ni abusivo, no difundas odio, tratá de "
+    "desescalar la conversación, respondé pensando en una audiencia más amplia "
+    "que quien publicó el tweet y construí una narrativa. No incites al odio ni "
+    "repliques el discurso agresivo. No aclares que sos un modelo de lenguaje ni "
+    "te niegues a asumir el rol."
 )
 
 PROMPTS = {
@@ -154,6 +157,32 @@ PROMPTS = {
             "EJEMPLO: {contra_ejemplo}"
         ),
     },
+}
+
+# Instrucciones de estrategia por tipo de contra-narrativa (guía, sección 6).
+# Se combinan con cualquier técnica de prompt: según `cn_strategy` se anexa la
+# instrucción correspondiente a la plantilla elegida.
+CN_TYPE_INSTRUCTIONS = {
+    "a": (
+        "La contra-narrativa debe negar la relación entre la justificación y la "
+        "conclusión del tweet. Usá la justificación y la conclusión indicadas "
+        "(tras '|') para construir tu respuesta, sin reproducirlas literalmente."
+    ),
+    "b": (
+        "La contra-narrativa debe negar la relación entre el colectivo atacado y "
+        "las propiedades o consecuencias que se le asocian. Usá el colectivo y la "
+        "propiedad indicados (tras '|') para construir tu respuesta, sin "
+        "reproducirlos literalmente."
+    ),
+    "c": (
+        "La contra-narrativa debe refutar la justificación del tweet. Si la "
+        "justificación es un hecho (fact), ponelo en duda o pedí fuentes; si es "
+        "una opinión (value), destacá que es subjetiva y relativizala; si es una "
+        "política (policy), proponé una política contraria. Usá la justificación "
+        "indicada (tras '|') para construir tu respuesta, sin reproducirla "
+        "literalmente."
+    ),
+    "": "",
 }
 
 # Técnicas de la guía que NO se incluyen como plantilla única y por qué.
