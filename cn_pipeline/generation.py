@@ -9,6 +9,8 @@ Responsabilidades:
 
 from __future__ import annotations
 
+from typing import Optional
+
 import torch
 from transformers import AutoTokenizer, AutoModelForCausalLM, AutoModelForSeq2SeqLM
 
@@ -57,8 +59,9 @@ def format_examples(examples) -> str:
     )
 
 
-def build_prompt(prompt_key: str, tweet: str, examples=None, counter_example: str = None,
-                 tipo_instruccion: str = None):
+def build_prompt(prompt_key: str, tweet: str, examples: Optional[list] = None,
+                 counter_example: Optional[str] = None,
+                 tipo_instruccion: Optional[str] = None):
     """Construye el prompt para una técnica dada.
 
     `tipo_instruccion` (opcional) anexa la instrucción de estrategia de
