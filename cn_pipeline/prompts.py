@@ -162,6 +162,11 @@ PROMPTS = {
 # Instrucciones de estrategia por tipo de contra-narrativa (guía, sección 6).
 # Se combinan con cualquier técnica de prompt: según `cn_strategy` se anexa la
 # instrucción correspondiente a la plantilla elegida.
+#
+# Claves "a"/"b"/"c": tipo con información argumentativa (el tweet llega con los
+# componentes tras "|"), por lo que la instrucción los referencia.
+# Claves "a_no_info"/"b_no_info"/"c_no_info": mismo tipo y estrategia, pero sin
+# información inyectada; el modelo debe identificar los componentes por sí mismo.
 CN_TYPE_INSTRUCTIONS = {
     "a": (
         "La contra-narrativa debe negar la relación entre la justificación y la "
@@ -181,6 +186,23 @@ CN_TYPE_INSTRUCTIONS = {
         "política (policy), proponé una política contraria. Usá la justificación "
         "indicada (tras '|') para construir tu respuesta, sin reproducirla "
         "literalmente."
+    ),
+    "a_no_info": (
+        "La contra-narrativa debe negar la relación entre la justificación y la "
+        "conclusión del tweet. Identificá la justificación y la conclusión "
+        "directamente en el texto del tweet."
+    ),
+    "b_no_info": (
+        "La contra-narrativa debe negar la relación entre el colectivo atacado y "
+        "las propiedades o consecuencias que se le asocian. Identificá el "
+        "colectivo y las propiedades directamente en el texto del tweet."
+    ),
+    "c_no_info": (
+        "La contra-narrativa debe refutar la justificación del tweet. Si la "
+        "justificación es un hecho (fact), ponelo en duda o pedí fuentes; si es "
+        "una opinión (value), destacá que es subjetiva y relativizala; si es una "
+        "política (policy), proponé una política contraria. Identificá la "
+        "justificación y su tipo directamente en el texto del tweet."
     ),
     "": "",
 }

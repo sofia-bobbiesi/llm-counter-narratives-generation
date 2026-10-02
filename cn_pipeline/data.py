@@ -7,20 +7,30 @@ from typing import List
 
 from load_dataset import load_asohmo
 
+# Estrategias de tipo de contra-narrativa soportadas. Las variantes "a/b/c"
+# inyectan la información argumentativa del tipo; las "*_no_info" solo filtran.
+CN_STRATEGIES = ("", "a", "b", "c", "a_no_info", "b_no_info", "c_no_info")
+
 
 def resolve_extra_info(use_extra_info: str, cn_strategy: str) -> str:
     """Traduce la estrategia de tipo de contra-narrativa al flag interno.
 
-    `load_dataset.parse_dataset` espera valores especiales (`cn_a`, `cn_a_no_info`,
-    etc.) para filtrar por tipo de contra-narrativa. Esta función centraliza esa
-    conversión.
+    Cuando `cn_strategy` selecciona un tipo, se inyecta la información
+    argumentativa correspondiente a ese tipo (con independencia de
+    `use_extra_info`):
+        - "a" / "b" / "c" → con info:
+            "a" -> justificación + conclusión (+ colectivo y propiedad)
+            "b" -> colectivo + propiedad
+            "c" -> justificación + conclusión
+        - "a_no_info" / "b_no_info" / "c_no_info" → mismo filtro de tipo, pero
+          SIN información argumentativa.
+
+    `use_extra_info` solo se usa cuando `cn_strategy` es "" (sin tipo).
     """
-    if cn_strategy == "a":
-        return "cn_a" if use_extra_info == "premises" else "cn_a_no_info"
-    if cn_strategy == "b":
-        return "cn_b" if use_extra_info == "collective" else "cn_b_no_info"
-    if cn_strategy == "c":
-        return "cn_c" if use_extra_info == "premises" else "cn_c_no_info"
+    if cn_strategy in ("a", "b", "c"):
+        return f"cn_{cn_strategy}"  # con info
+    if cn_strategy in ("a_no_info", "b_no_info", "c_no_info"):
+        return f"cn_{cn_strategy}"  # sin info
     return use_extra_info
 
 
