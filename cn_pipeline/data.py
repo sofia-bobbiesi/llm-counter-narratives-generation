@@ -52,7 +52,7 @@ def sample_examples(train: List[dict], val: List[dict], n: int, seed: int) -> Li
     return rng.sample(pool, min(n, len(pool)))
 
 
-def sample_counter_narrative(train: List[dict], val: List[dict], seed: int):
+def sample_counter_narrative(train: List[dict], val: List[dict], seed: int) -> str:
     """Muestrea una única contra-narrativa de train+val (para one-shot/CARE)."""
     pool = train + val
     if not pool:
