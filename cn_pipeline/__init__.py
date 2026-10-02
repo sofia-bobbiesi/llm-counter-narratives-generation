@@ -7,7 +7,7 @@ Módulos:
     data        -- carga y preparación del dataset ASOHMO.
     generation  -- carga de modelos, armado de prompts y generación.
     evaluation  -- métricas automáticas (BLEU/ROUGE/BERTScore).
-    llm_judge   -- evaluación LLM-as-judge (opcional y configurable).
+    llm_judge   -- evaluación LLM-as-judge (métrica obligatoria).
     pipeline    -- orquestación de un experimento completo.
 """
 

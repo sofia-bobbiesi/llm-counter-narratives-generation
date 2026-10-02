@@ -1,6 +1,5 @@
 transformers
 torch
-bitsandbytes
 datasets
 accelerate
 evaluate
@@ -8,6 +7,7 @@ nltk
 bert_score
 rouge-score
 bleu
-peft
+tabulate
+requests
 absl-py
 # sentence_transformers
