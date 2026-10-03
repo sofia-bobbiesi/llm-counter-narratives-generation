@@ -15,7 +15,8 @@ from __future__ import annotations
 
 import argparse
 import json
-from dataclasses import dataclass, field, asdict
+import typing
+from dataclasses import dataclass, field, asdict, fields
 from typing import List, Optional
 
 from .prompts import PROMPTS
@@ -163,36 +164,54 @@ def build_parser() -> argparse.ArgumentParser:
     return parser
 
 
+def _unwrap_optional(tp):
+    """Devuelve T si `tp` es `Optional[T]`; si no, `tp`."""
+    if typing.get_origin(tp) is typing.Union:
+        args = [a for a in typing.get_args(tp) if a is not type(None)]
+        if len(args) == 1:
+            return args[0]
+    return tp
+
+
+def _field_types(cls) -> dict:
+    """Tipos declarados de un dataclass, con `Optional[T]` resuelto a `T`."""
+    hints = typing.get_type_hints(cls)
+    return {f.name: _unwrap_optional(hints[f.name]) for f in fields(cls)}
+
+
 def _coerce(value: str, target):
-    """Convierte el string de CLI al tipo del campo correspondiente."""
-    if isinstance(target, bool):
+    """Convierte el string de CLI al tipo declarado del campo."""
+    target = _unwrap_optional(target)
+    if target is bool:
         return str(value).strip().lower() in ("1", "true", "yes", "on")
-    if isinstance(target, int):
+    if target is int:
         return int(value)
-    if isinstance(target, float):
+    if target is float:
         return float(value)
     return value
 
 
 def apply_overrides(cfg: Config, args: argparse.Namespace) -> Config:
     """Aplica al `cfg` solo los argumentos de CLI provistos (no None)."""
+    simple_types = _field_types(Config)
     for field_name in _SIMPLE_FIELDS:
         value = getattr(args, field_name, None)
         if value is not None:
-            setattr(cfg, field_name, _coerce(value, getattr(cfg, field_name)))
+            setattr(cfg, field_name, _coerce(value, simple_types[field_name]))
 
     if getattr(args, "prompt_types", None):
         cfg.prompt_types = [
             s.strip() for s in args.prompt_types.split(",") if s.strip()
         ]
 
+    gen_types = _field_types(GenerationParams)
     for field_name in _GENERATION_FIELDS:
         value = getattr(args, field_name, None)
         if value is not None:
             setattr(
                 cfg.generation,
                 field_name,
-                _coerce(value, getattr(cfg.generation, field_name)),
+                _coerce(value, gen_types[field_name]),
             )
     return cfg
 
