@@ -1,7 +1,7 @@
 """Carga de modelos, armado de prompts y generación de contra-narrativas.
 
 Responsabilidades:
-    - Detectar si un modelo es de tipo chat o seq2seq.
+    - Detectar si un modelo es de tipo chat o multimodal.
     - Construir los prompts a partir de la biblioteca `cn_pipeline.prompts`.
     - Anexar la información argumentativa al tweet.
     - Cargar tokenizer + modelo y generar/limpiar la respuesta.
@@ -12,7 +12,7 @@ from __future__ import annotations
 from typing import Optional
 
 import torch
-from transformers import AutoTokenizer, AutoModelForCausalLM, AutoModelForSeq2SeqLM
+from transformers import AutoTokenizer, AutoModelForCausalLM
 
 from .prompts import PROMPTS, SYSTEM_ROLE
 
@@ -36,9 +36,9 @@ def is_chat_model(model_name: str) -> bool:
     return any(marker in model_name.lower() for marker in CHAT_MODEL_MARKERS)
 
 
-def is_seq2seq_model(model_name: str) -> bool:
-    """Determina si el modelo es encoder-decoder (Flan-T5 y similares)."""
-    return "flan-t5" in model_name.lower()
+def is_gemma4_model(model_name: str) -> bool:
+    """Determina si es un Gemma 4 (multimodal/unified, carga con AutoProcessor)."""
+    return "gemma-4" in model_name.lower()
 
 
 def add_arg_info(extra_info: dict, tweet: str) -> str:
@@ -100,6 +100,20 @@ def clean_response(text: str) -> str:
     return text.strip()
 
 
+def clean_gemma4_response(text: str) -> str:
+    """Limpia la salida de Gemma 4 (bloque de pensamiento vacío + tokens de canal).
+
+    Con `enable_thinking=False`, Gemma 4 emite igual un bloque de pensamiento
+    vacío, con la forma `<|channel>thought\\n<channel|>[respuesta]`.
+    """
+    for token in ("<|channel>", "<channel|>"):
+        text = text.replace(token, "")
+    text = text.strip()
+    if text.lower().startswith("thought"):
+        text = text[len("thought"):].lstrip()
+    return text.strip()
+
+
 def _resolve_dtype(dtype: str, device: torch.device):
     """Resuelve el `torch.dtype` a usar según configuración y dispositivo."""
     if dtype == "auto":
@@ -116,26 +130,39 @@ class Generator:
         self.device = device if isinstance(device, torch.device) else torch.device(device)
         self.generation_params = dict(generation_params or {})
         self.is_chat = is_chat_model(model_name)
-        self.is_seq2seq = is_seq2seq_model(model_name)
+        self.is_gemma4 = is_gemma4_model(model_name)
+        self.processor = None
         self.dtype = _resolve_dtype(torch_dtype, self.device)
         self.tokenizer = self._load_tokenizer()
         self.model = self._load_model()
 
     def _load_tokenizer(self):
-        tokenizer = AutoTokenizer.from_pretrained(self.model_name)
+        if self.is_gemma4:
+            from transformers import AutoProcessor
+
+            self.processor = AutoProcessor.from_pretrained(self.model_name)
+            tokenizer = self.processor.tokenizer
+        else:
+            tokenizer = AutoTokenizer.from_pretrained(self.model_name)
         if not tokenizer.pad_token:
             tokenizer.pad_token = tokenizer.eos_token
         return tokenizer
 
     def _load_model(self):
-        if self.is_seq2seq:
-            model = AutoModelForSeq2SeqLM.from_pretrained(
-                self.model_name, torch_dtype=self.dtype
+        if self.is_gemma4:
+            # Gemma 4 es multimodal/unified: se carga con AutoModelForMultimodalLM.
+            # Se usa device_map="auto" y no se mueve con .to(device) (carga directa
+            # en GPU, sin pasar por CPU).
+            from transformers import AutoModelForMultimodalLM
+
+            model = AutoModelForMultimodalLM.from_pretrained(
+                self.model_name, dtype=self.dtype, device_map="auto"
             )
-        else:
-            model = AutoModelForCausalLM.from_pretrained(
-                self.model_name, torch_dtype=self.dtype
-            )
+            model.eval()
+            return model
+        model = AutoModelForCausalLM.from_pretrained(
+            self.model_name, torch_dtype=self.dtype
+        )
         model.to(self.device)
         model.eval()
         return model
@@ -150,6 +177,25 @@ class Generator:
     def generate(self, prompt) -> str:
         """Genera y devuelve la contra-narrativa (solo los tokens nuevos)."""
         gen_kwargs = self._generation_kwargs()
+
+        # Las técnicas de modo "texto" devuelven un string; los modelos de chat
+        # esperan una lista de mensajes. Se normaliza como un turno de usuario.
+        if (self.is_gemma4 or self.is_chat) and isinstance(prompt, str):
+            prompt = [{"role": "user", "content": prompt}]
+
+        if self.is_gemma4:
+            inputs = self.processor.apply_chat_template(
+                prompt,
+                tokenize=True,
+                return_dict=True,
+                add_generation_prompt=True,
+                enable_thinking=False,
+            ).to(self.device)
+            outputs = self.model.generate(**inputs, **gen_kwargs)
+            input_len = inputs["input_ids"].shape[-1]
+            return clean_gemma4_response(
+                self.tokenizer.decode(outputs[0][input_len:], skip_special_tokens=True)
+            )
 
         if self.is_chat:
             input_ids = self.tokenizer.apply_chat_template(
@@ -169,11 +215,7 @@ class Generator:
         ).to(self.device)
         outputs = self.model.generate(**inputs, **gen_kwargs)
 
-        if self.is_seq2seq:
-            return clean_response(
-                self.tokenizer.decode(outputs[0], skip_special_tokens=True)
-            )
-        # Causal no-chat: descartar la parte correspondiente al prompt.
+        # Descartar la parte correspondiente al prompt.
         input_len = inputs["input_ids"].shape[-1]
         return clean_response(
             self.tokenizer.decode(outputs[0][input_len:], skip_special_tokens=True)

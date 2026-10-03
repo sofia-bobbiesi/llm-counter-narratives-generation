@@ -5,7 +5,7 @@ contra-narrativas con las técnicas de prompt seleccionadas -> evaluar con
 métricas automáticas (y LLM-as-judge si está configurado) -> guardar resultados.
 
 Puede ejecutarse desde la notebook (`run_experiment`) o desde la línea de
-comandos (`python -m cn_pipeline.pipeline --config config.example.json ...`).
+comandos (`python -m cn_pipeline.pipeline --config configs/config_gemma.json ...`).
 """
 
 from __future__ import annotations
