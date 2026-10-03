@@ -20,6 +20,9 @@ from typing import List, Optional
 
 from .prompts import PROMPTS
 
+# Modos de cuantización soportados (además de None, sin cuantizar).
+QUANTIZATION_MODES = (None, "8bit", "4bit")
+
 
 # ---------------------------------------------------------------------------
 # Dataclasses
@@ -69,6 +72,7 @@ class Config:
     seed: int = 42
     device: str = "auto"  # "auto" | "cuda" | "cpu"
     torch_dtype: str = "auto"  # "auto" | "float16" | "bfloat16" | "float32"
+    quantization: Optional[str] = None  # None | "8bit" | "4bit"
     generation: GenerationParams = field(default_factory=GenerationParams)
     metrics: List[str] = field(
         default_factory=lambda: ["bleu", "rouge", "bertscore"]
@@ -119,6 +123,7 @@ _SIMPLE_FIELDS = [
     "seed",
     "device",
     "torch_dtype",
+    "quantization",
     "output_dir",
 ]
 

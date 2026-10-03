@@ -125,12 +125,13 @@ class Generator:
     """Envuelve un modelo de lenguaje para generar contra-narrativas."""
 
     def __init__(self, model_name: str, device, generation_params: dict = None,
-                 torch_dtype: str = "auto"):
+                 torch_dtype: str = "auto", quantization: str = None):
         self.model_name = model_name
         self.device = device if isinstance(device, torch.device) else torch.device(device)
         self.generation_params = dict(generation_params or {})
         self.is_chat = is_chat_model(model_name)
         self.is_gemma4 = is_gemma4_model(model_name)
+        self.quantization = quantization
         self.processor = None
         self.dtype = _resolve_dtype(torch_dtype, self.device)
         self.tokenizer = self._load_tokenizer()
@@ -148,15 +149,38 @@ class Generator:
             tokenizer.pad_token = tokenizer.eos_token
         return tokenizer
 
+    def _quantization_config(self):
+        """Devuelve una BitsAndBytesConfig según `self.quantization` (o None)."""
+        if not self.quantization:
+            return None
+        from transformers import BitsAndBytesConfig
+
+        if self.quantization == "8bit":
+            return BitsAndBytesConfig(load_in_8bit=True)
+        if self.quantization == "4bit":
+            return BitsAndBytesConfig(load_in_4bit=True)
+        raise ValueError(f"quantization desconocida: {self.quantization!r}")
+
     def _load_model(self):
+        bnb = self._quantization_config()
         if self.is_gemma4:
             # Gemma 4 es multimodal/unified: se carga con AutoModelForMultimodalLM.
             # Se usa device_map="auto" y no se mueve con .to(device) (carga directa
             # en GPU, sin pasar por CPU).
             from transformers import AutoModelForMultimodalLM
 
-            model = AutoModelForMultimodalLM.from_pretrained(
-                self.model_name, dtype=self.dtype, device_map="auto"
+            kwargs = {"device_map": "auto"}
+            if bnb is not None:
+                kwargs["quantization_config"] = bnb
+            else:
+                kwargs["dtype"] = self.dtype
+            model = AutoModelForMultimodalLM.from_pretrained(self.model_name, **kwargs)
+            model.eval()
+            return model
+        if bnb is not None:
+            # Cuantizado: bitsandbytes + device_map="auto" (no se mueve con .to()).
+            model = AutoModelForCausalLM.from_pretrained(
+                self.model_name, quantization_config=bnb, device_map="auto"
             )
             model.eval()
             return model

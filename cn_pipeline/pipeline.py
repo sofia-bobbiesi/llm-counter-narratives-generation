@@ -20,6 +20,7 @@ import torch
 
 from .config import (
     Config,
+    QUANTIZATION_MODES,
     build_parser,
     load_config,
     apply_overrides,
@@ -87,7 +88,11 @@ def run_experiment(cfg: Config):
 
     # 4. Modelo.
     generator = Generator(
-        cfg.model_name, device, asdict(cfg.generation), torch_dtype=cfg.torch_dtype
+        cfg.model_name,
+        device,
+        asdict(cfg.generation),
+        torch_dtype=cfg.torch_dtype,
+        quantization=cfg.quantization,
     )
 
     # 5. Generación.
@@ -172,6 +177,13 @@ def main(argv=None) -> None:
         raise ValueError(
             f"cn_strategy desconocida: {cfg.cn_strategy!r}. "
             f"Disponibles: {list(CN_STRATEGIES)}"
+        )
+
+    # Validación del modo de cuantización.
+    if cfg.quantization not in QUANTIZATION_MODES:
+        raise ValueError(
+            f"quantization desconocida: {cfg.quantization!r}. "
+            f"Disponibles: {list(QUANTIZATION_MODES)}"
         )
 
     run_experiment(cfg)
