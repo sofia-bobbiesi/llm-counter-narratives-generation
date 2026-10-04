@@ -9,6 +9,7 @@ Responsabilidades:
 
 from __future__ import annotations
 
+import re
 from typing import Optional
 
 import torch
@@ -108,16 +109,19 @@ def clean_response(text: str) -> str:
 
 
 def clean_gemma4_response(text: str) -> str:
-    """Limpia la salida de Gemma 4 (bloque de pensamiento vacío + tokens de canal).
+    """Limpia la salida cruda de Gemma 4.
 
-    Con `enable_thinking=False`, Gemma 4 emite igual un bloque de pensamiento
-    vacío, con la forma `<|channel>thought\\n<channel|>[respuesta]`.
+    Gemma 4 cierra el turno con `<turn|>` (no con `<eos>`), así que si la
+    generación no se detiene ahí continúa con un segundo turno
+    (`<|channel>thought\\n<channel|>` + la respuesta repetida). Se corta en el
+    primer fin de turno y se quitan los marcadores de canal/turno.
     """
-    for token in ("<|channel>", "<channel|>"):
-        text = text.replace(token, "")
-    text = text.strip()
-    if text.lower().startswith("thought"):
-        text = text[len("thought"):].lstrip()
+    for tok in ("<turn|>", "<end_of_turn>"):
+        if tok in text:
+            text = text.split(tok)[0]
+    text = re.sub(r"<\|channel>.*?<channel\|>", "", text, flags=re.DOTALL)
+    for tok in ("<|channel>", "<channel|>", "<|turn>", "<turn|>", "<eos>", "<bos>", "<pad>"):
+        text = text.replace(tok, "")
     return text.strip()
 
 
@@ -215,6 +219,11 @@ class Generator:
             prompt = [{"role": "user", "content": prompt}]
 
         if self.is_gemma4:
+            # Detener la generación en el fin de turno de Gemma (`<turn|>`), que
+            # no es el `<eos>`; si no, sigue con un segundo turno repetido.
+            turn_id = self.tokenizer.convert_tokens_to_ids("<turn|>")
+            if turn_id is not None and turn_id != self.tokenizer.unk_token_id:
+                gen_kwargs["eos_token_id"] = [self.tokenizer.eos_token_id, turn_id]
             inputs = self.processor.apply_chat_template(
                 prompt,
                 tokenize=True,
@@ -225,9 +234,10 @@ class Generator:
             ).to(self.device)
             outputs = self.model.generate(**inputs, **gen_kwargs)
             input_len = inputs["input_ids"].shape[-1]
-            return clean_gemma4_response(
-                self.tokenizer.decode(outputs[0][input_len:], skip_special_tokens=True)
+            raw = self.tokenizer.decode(
+                outputs[0][input_len:], skip_special_tokens=False
             )
+            return clean_gemma4_response(raw)
 
         if self.is_chat:
             input_ids = self.tokenizer.apply_chat_template(
