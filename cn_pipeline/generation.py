@@ -212,6 +212,7 @@ class Generator:
                 prompt,
                 tokenize=True,
                 return_dict=True,
+                return_tensors="pt",
                 add_generation_prompt=True,
                 enable_thinking=False,
             ).to(self.device)

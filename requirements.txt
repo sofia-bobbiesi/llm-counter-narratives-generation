@@ -7,7 +7,6 @@ evaluate
 nltk
 bert_score
 rouge-score
-bleu
 tabulate
 requests
 absl-py
