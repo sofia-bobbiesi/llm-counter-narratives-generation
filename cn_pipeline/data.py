@@ -34,6 +34,15 @@ def resolve_extra_info(use_extra_info: str, cn_strategy: str) -> str:
     return use_extra_info
 
 
+# Flags internos de `resolve_extra_info` que sí inyectan información argumentativa.
+INFO_FLAGS = ("collective", "premises", "all", "cn_a", "cn_b", "cn_c")
+
+
+def injects_info(use_extra_info: str, cn_strategy: str) -> bool:
+    """Indica si la configuración inyecta información argumentativa en el tweet."""
+    return resolve_extra_info(use_extra_info, cn_strategy) in INFO_FLAGS
+
+
 def load_data(use_extra_info: str = "", cn_strategy: str = ""):
     """Carga las particiones test/train/dev de ASOHMO.
 

@@ -14,7 +14,7 @@ from typing import Optional
 import torch
 from transformers import AutoTokenizer, AutoModelForCausalLM
 
-from .prompts import PROMPTS, SYSTEM_ROLE
+from .prompts import PROMPTS, SYSTEM_ROLE, OUTPUT_CONSTRAINTS, ARG_INFO_NOTE
 
 # Marcadores para detectar modelos que usan formato de chat (instruct).
 CHAT_MODEL_MARKERS = ("llama", "mistral", "falcon", "zephyr", "gemma", "qwen", "mixtral")
@@ -61,11 +61,15 @@ def format_examples(examples) -> str:
 
 def build_prompt(prompt_key: str, tweet: str, examples: Optional[list] = None,
                  counter_example: Optional[str] = None,
-                 tipo_instruccion: Optional[str] = None):
+                 tipo_instruccion: Optional[str] = None,
+                 usar_info: bool = False):
     """Construye el prompt para una técnica dada.
 
     `tipo_instruccion` (opcional) anexa la instrucción de estrategia de
-    contra-narrativa (A/B/C, ver `CN_TYPE_INSTRUCTIONS`) a la plantilla.
+    contra-narrativa (A/B/C, ver `CN_TYPE_INSTRUCTIONS`). `usar_info` anexa la
+    nota para usar la información argumentativa inyectada tras '|'. Todas las
+    técnicas reciben además `OUTPUT_CONSTRAINTS` (una única contra-narrativa,
+    sin títulos, listas ni markdown).
 
     Devuelve:
         - una lista de mensajes `[{"role": ..., "content": ...}, ...]` si la
@@ -81,6 +85,9 @@ def build_prompt(prompt_key: str, tweet: str, examples: Optional[list] = None,
     text = spec["plantilla"].format(**kwargs)
     if tipo_instruccion:
         text = f"{text}\n\n{tipo_instruccion}"
+    if usar_info:
+        text = f"{text}\n\n{ARG_INFO_NOTE}"
+    text = f"{text}\n\n{OUTPUT_CONSTRAINTS}"
     if spec.get("modo") == "chat":
         system = spec.get("system") or SYSTEM_ROLE
         return [

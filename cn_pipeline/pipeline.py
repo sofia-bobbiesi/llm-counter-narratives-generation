@@ -27,7 +27,7 @@ from .config import (
     resolve_device,
     save_config,
 )
-from .data import CN_STRATEGIES, load_data, sample_examples, sample_counter_narrative
+from .data import CN_STRATEGIES, injects_info, load_data, sample_examples, sample_counter_narrative
 from .evaluation import evaluate_predictions, get_references
 from .generation import Generator, add_arg_info, build_prompt
 from .llm_judge import build_judge, judge_rows
@@ -97,6 +97,7 @@ def run_experiment(cfg: Config):
 
     # 5. Generación.
     tipo_instruccion = CN_TYPE_INSTRUCTIONS.get(cfg.cn_strategy, "")
+    usar_info = injects_info(cfg.use_extra_info, cfg.cn_strategy)
     rows = []
     for sample in test:
         tweet = sample["hateSpeech"]
@@ -108,6 +109,7 @@ def run_experiment(cfg: Config):
                 examples=examples,
                 counter_example=counter_example,
                 tipo_instruccion=tipo_instruccion,
+                usar_info=usar_info,
             )
             generated = generator.generate(prompt)
             rows.append(

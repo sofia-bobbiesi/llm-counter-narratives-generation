@@ -37,6 +37,21 @@ SYSTEM_ROLE = (
     "te niegues a asumir el rol."
 )
 
+# Restricción de salida compartida por todas las técnicas: evita respuestas
+# "meta" (varias opciones, títulos, markdown) y fuerza una única contra-narrativa.
+OUTPUT_CONSTRAINTS = (
+    "Respondé únicamente con la contra-narrativa: una o dos oraciones, sin títulos, "
+    "listas, opciones alternativas, explicaciones ni comentarios, sin repetir el tweet "
+    "y sin usar formato Markdown."
+)
+
+# Instrucción para usar la información argumentativa inyectada tras '|'.
+ARG_INFO_NOTE = (
+    "El tweet incluye, tras '|', información sobre su estructura argumentativa "
+    "(colectivo, propiedad, justificación, conclusión, pivote); usala para elaborar "
+    "la respuesta y no la reproduzcas literalmente."
+)
+
 PROMPTS = {
     "system_message": {
         "tecnica": "A. System message",
