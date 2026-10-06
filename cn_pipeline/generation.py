@@ -278,14 +278,11 @@ class Generator:
             )
 
         if self.is_chat:
-            input_ids = self.tokenizer.apply_chat_template(
-                prompt, add_generation_prompt=True, return_tensors="pt"
+            encoded = self.tokenizer.apply_chat_template(
+                prompt, add_generation_prompt=True, return_tensors="pt", return_dict=True
             ).to(self.device)
-            attention_mask = torch.ones_like(input_ids)
-            outputs = self.model.generate(
-                input_ids=input_ids, attention_mask=attention_mask, **gen_kwargs
-            )
-            new_tokens = outputs[0][input_ids.shape[-1]:]
+            outputs = self.model.generate(**encoded, **gen_kwargs)
+            new_tokens = outputs[0][encoded["input_ids"].shape[-1]:]
             return clean_response(
                 self.tokenizer.decode(new_tokens, skip_special_tokens=True)
             )
