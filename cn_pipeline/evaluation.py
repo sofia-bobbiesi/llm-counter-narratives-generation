@@ -95,7 +95,10 @@ def evaluate_predictions(
         detailed["ROUGE-L"] = rl
 
     if "bertscore" in metrics:
-        scorer = evaluate.load("bertscore")
+        # Se usa la librería `bert_score` directamente: el wrapper de `evaluate`
+        # solo acepta modelos predefinidos (lanza KeyError con `dccuchile/...`).
+        from bert_score import score as bert_score_score
+
         # Se expande cada fila por sus referencias y se conserva el máximo F1.
         flat_predictions, flat_references, owner = [], [], []
         for i, (p, refs) in enumerate(zip(predictions, references)):
@@ -103,15 +106,17 @@ def evaluate_predictions(
                 flat_predictions.append(p)
                 flat_references.append(r)
                 owner.append(i)
-        scores = scorer.compute(
-            predictions=flat_predictions,
-            references=flat_references,
+        _, _, f1 = bert_score_score(
+            flat_predictions,
+            flat_references,
             lang="es",
             model_type=bert_model,
+            num_layers=12,
+            verbose=False,
         )
         best = [-1.0] * len(predictions)
-        for i, f1 in zip(owner, scores["f1"]):
-            best[i] = max(best[i], f1)
+        for i, value in zip(owner, f1.tolist()):
+            best[i] = max(best[i], value)
         detailed["BERT-F1"] = best
 
     # Presentación legible en el CSV: referencias y generaciones en una sola línea.
