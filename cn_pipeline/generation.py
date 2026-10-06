@@ -42,6 +42,12 @@ def is_gemma4_model(model_name: str) -> bool:
     return "gemma-4" in model_name.lower()
 
 
+def is_mistral3_model(model_name: str) -> bool:
+    """Determina si es un Ministral/Mistral 3 (Mistral3ForConditionalGeneration)."""
+    name = model_name.lower()
+    return "ministral-3" in name or "mistral3" in name
+
+
 def add_arg_info(extra_info: dict, tweet: str) -> str:
     """Anexa la información argumentativa disponible al tweet, separada por '|'."""
     parts = [tweet]
@@ -142,6 +148,7 @@ class Generator:
         self.generation_params = dict(generation_params or {})
         self.is_chat = is_chat_model(model_name)
         self.is_gemma4 = is_gemma4_model(model_name)
+        self.is_mistral3 = is_mistral3_model(model_name)
         self.quantization = quantization
         self.processor = None
         self.dtype = _resolve_dtype(torch_dtype, self.device)
@@ -154,9 +161,14 @@ class Generator:
 
             self.processor = AutoProcessor.from_pretrained(self.model_name)
             tokenizer = self.processor.tokenizer
+        elif self.is_mistral3:
+            # Mistral 3 usa MistralCommonBackend (requiere `mistral-common`).
+            from transformers import MistralCommonBackend
+
+            tokenizer = MistralCommonBackend.from_pretrained(self.model_name)
         else:
             tokenizer = AutoTokenizer.from_pretrained(self.model_name)
-        if not tokenizer.pad_token:
+        if not self.is_mistral3 and not getattr(tokenizer, "pad_token", None):
             tokenizer.pad_token = tokenizer.eos_token
         return tokenizer
 
@@ -186,6 +198,18 @@ class Generator:
             else:
                 kwargs["dtype"] = self.dtype
             model = AutoModelForMultimodalLM.from_pretrained(self.model_name, **kwargs)
+            model.eval()
+            return model
+        if self.is_mistral3:
+            # Mistral 3 es multimodal (vision + texto); se usa en modo texto.
+            from transformers import Mistral3ForConditionalGeneration
+
+            kwargs = {"device_map": "auto"}
+            if bnb is not None:
+                kwargs["quantization_config"] = bnb
+            model = Mistral3ForConditionalGeneration.from_pretrained(
+                self.model_name, **kwargs
+            )
             model.eval()
             return model
         if bnb is not None:
@@ -238,6 +262,20 @@ class Generator:
                 outputs[0][input_len:], skip_special_tokens=False
             )
             return clean_gemma4_response(raw)
+
+        if self.is_mistral3:
+            inputs = self.tokenizer.apply_chat_template(
+                prompt, return_tensors="pt", return_dict=True
+            )
+            inputs = {
+                k: (v.to(self.device) if hasattr(v, "to") else v)
+                for k, v in inputs.items()
+            }
+            outputs = self.model.generate(**inputs, **gen_kwargs)
+            input_len = inputs["input_ids"].shape[-1]
+            return clean_response(
+                self.tokenizer.decode(outputs[0][input_len:], skip_special_tokens=True)
+            )
 
         if self.is_chat:
             input_ids = self.tokenizer.apply_chat_template(

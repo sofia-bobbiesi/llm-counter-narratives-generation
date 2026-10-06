@@ -1,5 +1,5 @@
 {
-  "model_name": "mistralai/Ministral-3-8B-Instruct-2512",
+  "model_name": "mistralai/Ministral-3-8B-Instruct-2512-BF16",
   "use_extra_info": "all",
   "cn_strategy": "",
   "language": "spanish",

@@ -1,6 +1,7 @@
-transformers
+transformers>=5
 torch
 bitsandbytes
+mistral-common
 datasets
 accelerate
 evaluate
