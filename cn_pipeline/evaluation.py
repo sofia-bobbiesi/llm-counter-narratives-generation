@@ -29,7 +29,6 @@ NON_METRIC_COLUMNS = {
     "true_cn",
     "generated_cn",
     "prompt_type",
-    "references",
 }
 
 
@@ -73,7 +72,6 @@ def evaluate_predictions(
 
     predictions = detailed["generated_cn"].astype(str).tolist()
     references = detailed["true_cn"].apply(get_references).tolist()
-    detailed["references"] = [" || ".join(refs) for refs in references]
     # Guarda contra filas sin referencias (no debería ocurrir en el corpus).
     references = [refs or [""] for refs in references]
 
@@ -97,7 +95,7 @@ def evaluate_predictions(
         detailed["ROUGE-L"] = rl
 
     if "bertscore" in metrics:
-        scorer = evaluate.load("bertscore", model_type=bert_model)
+        scorer = evaluate.load("bertscore")
         # Se expande cada fila por sus referencias y se conserva el máximo F1.
         flat_predictions, flat_references, owner = [], [], []
         for i, (p, refs) in enumerate(zip(predictions, references)):
@@ -106,12 +104,19 @@ def evaluate_predictions(
                 flat_references.append(r)
                 owner.append(i)
         scores = scorer.compute(
-            predictions=flat_predictions, references=flat_references, lang="es"
+            predictions=flat_predictions,
+            references=flat_references,
+            lang="es",
+            model_type=bert_model,
         )
         best = [-1.0] * len(predictions)
         for i, f1 in zip(owner, scores["f1"]):
             best[i] = max(best[i], f1)
         detailed["BERT-F1"] = best
+
+    # Presentación legible en el CSV: referencias y generaciones en una sola línea.
+    detailed["true_cn"] = [" || ".join(refs) for refs in references]
+    detailed["generated_cn"] = [p.replace("\n", " ").strip() for p in predictions]
 
     summary = summarize(detailed)
     return detailed, summary
