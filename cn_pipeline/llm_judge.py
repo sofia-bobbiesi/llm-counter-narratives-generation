@@ -24,10 +24,21 @@ DEFAULT_RUBRIC = (
     "adecuadamente al tweet de odio), informatividad (cuán específica o genérica "
     "es), coherencia (coherencia interna) y ausencia de ofensividad (que no "
     "incite al odio). Respondé SOLO con un objeto JSON con esta forma:\n"
-    '{"adecuacion": n, "informatividad": n, "coherencia": n, "no_ofensividad": n, "promedio": n}\n\n'
+    '{{"adecuacion": n, "informatividad": n, "coherencia": n, "no_ofensividad": n, "promedio": n}}\n\n'
     "Tweet de odio: {hate_tweet}\n"
     "Contra-narrativa: {counter_narrative}"
 )
+
+
+def render_rubric(rubric: str, hate_tweet: str, counter_narrative: str) -> str:
+    """Sustituye los placeholders de la rúbrica."""
+    try:
+        return rubric.format(hate_tweet=hate_tweet, counter_narrative=counter_narrative)
+    except (KeyError, IndexError, ValueError):
+        return (
+            rubric.replace("{hate_tweet}", hate_tweet)
+            .replace("{counter_narrative}", counter_narrative)
+        )
 
 
 def parse_judge_json(content: str) -> dict:
@@ -80,9 +91,7 @@ class APIBackend(JudgeBackend):
         messages = [
             {
                 "role": "user",
-                "content": self.rubric.format(
-                    hate_tweet=hate_tweet, counter_narrative=counter_narrative
-                ),
+                "content": render_rubric(self.rubric, hate_tweet, counter_narrative),
             }
         ]
         response = requests.post(

@@ -192,11 +192,9 @@ class Generator:
             # en GPU, sin pasar por CPU).
             from transformers import AutoModelForMultimodalLM
 
-            kwargs = {"device_map": "auto"}
+            kwargs = {"device_map": "auto", "dtype": self.dtype}
             if bnb is not None:
                 kwargs["quantization_config"] = bnb
-            else:
-                kwargs["dtype"] = self.dtype
             model = AutoModelForMultimodalLM.from_pretrained(self.model_name, **kwargs)
             model.eval()
             return model
@@ -207,6 +205,7 @@ class Generator:
             kwargs = {"device_map": "auto"}
             if bnb is not None:
                 kwargs["quantization_config"] = bnb
+                kwargs["dtype"] = self.dtype
             model = Mistral3ForConditionalGeneration.from_pretrained(
                 self.model_name, **kwargs
             )
@@ -215,12 +214,15 @@ class Generator:
         if bnb is not None:
             # Cuantizado: bitsandbytes + device_map="auto" (no se mueve con .to()).
             model = AutoModelForCausalLM.from_pretrained(
-                self.model_name, quantization_config=bnb, device_map="auto"
+                self.model_name,
+                quantization_config=bnb,
+                device_map="auto",
+                dtype=self.dtype,
             )
             model.eval()
             return model
         model = AutoModelForCausalLM.from_pretrained(
-            self.model_name, torch_dtype=self.dtype
+            self.model_name, dtype=self.dtype
         )
         model.to(self.device)
         model.eval()
