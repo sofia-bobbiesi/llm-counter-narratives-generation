@@ -51,8 +51,12 @@ def experiment_id(cfg: Config) -> str:
     return f"{model}_{cfg.language}_{extra}_{cn}_seed{cfg.seed}"
 
 
-def run_experiment(cfg: Config):
+def run_experiment(cfg: Config, run_judge: bool = True):
     """Ejecuta el experimento descrito por `cfg`.
+
+    Si `run_judge=False` (p. ej. en un nodo sin red) se omite el LLM-as-judge;
+    las columnas `judge_*` quedan ausentes y pueden completarse luego con
+    `cn_pipeline.judge_results`.
 
     Devuelve (detallado, resumen, directorio de salida).
     """
@@ -60,9 +64,16 @@ def run_experiment(cfg: Config):
     device = resolve_device(cfg.device)
     print(f"[pipeline] device={device}, dtype={cfg.torch_dtype}")
 
-    # 0. Juez (obligatorio): valida modelo y clave, y falla temprano si faltan.
-    judge = build_judge(cfg.llm_judge)
-    print(f"[pipeline] LLM-as-judge: {cfg.llm_judge.model}")
+    # 0. Juez (obligatorio a nivel workflow): valida modelo y clave temprano.
+    judge = None
+    if run_judge:
+        judge = build_judge(cfg.llm_judge)
+        print(f"[pipeline] LLM-as-judge: {cfg.llm_judge.model}")
+    else:
+        print(
+            "[pipeline] LLM-as-judge: omitido (--skip_judge). "
+            "Completar luego con `python -m cn_pipeline.judge_results`."
+        )
 
     # 1. Datos.
     test, train, val = load_data(cfg.use_extra_info, cfg.cn_strategy)
@@ -123,8 +134,9 @@ def run_experiment(cfg: Config):
     print(f"[pipeline] generadas {len(rows)} contra-narrativas")
 
     # 6. Evaluación (métricas automáticas + LLM-as-judge).
-    print("[pipeline] evaluando con LLM-as-judge...")
-    rows = judge_rows(judge, rows)
+    if run_judge:
+        print("[pipeline] evaluando con LLM-as-judge...")
+        rows = judge_rows(judge, rows, retries=3)
 
     detailed, summary = evaluate_predictions(rows, metrics=cfg.metrics)
 
@@ -188,7 +200,7 @@ def main(argv=None) -> None:
             f"Disponibles: {list(QUANTIZATION_MODES)}"
         )
 
-    run_experiment(cfg)
+    run_experiment(cfg, run_judge=not args.skip_judge)
 
 
 if __name__ == "__main__":

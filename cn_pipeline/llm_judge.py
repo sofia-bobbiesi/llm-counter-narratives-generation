@@ -71,13 +71,15 @@ class APIBackend(JudgeBackend):
     """Backend que consulta un endpoint compatible con OpenAI."""
 
     def __init__(self, model: str, base_url=None, api_key_env: str = "LLM_JUDGE_API_KEY",
-                 rubric=None, max_tokens: int = 300, temperature: float = 0.0):
+                 rubric=None, max_tokens: int = 300, temperature: float = 0.0,
+                 timeout: int = 120):
         self.model = model
         self.base_url = base_url
         self.api_key_env = api_key_env
         self.rubric = rubric or DEFAULT_RUBRIC
         self.max_tokens = max_tokens
         self.temperature = temperature
+        self.timeout = timeout
 
     def judge(self, hate_tweet: str, counter_narrative: str) -> dict:
         import requests
@@ -104,11 +106,46 @@ class APIBackend(JudgeBackend):
                 "max_tokens": self.max_tokens,
                 "stream": False,
             },
-            timeout=120,
+            timeout=self.timeout,
         )
         response.raise_for_status()
         content = response.json()["choices"][0]["message"]["content"]
         return parse_judge_json(content)
+
+
+def judge_with_retry(judge: JudgeBackend, hate_tweet: str, counter_narrative: str,
+                     retries: int = 3, base_delay: float = 2.0) -> dict:
+    """Llama al juez reintentando ante errores transitorios (red/429/5xx).
+
+    Usa backoff exponencial (`base_delay * 2**intento`) y respeta el encabezado
+    `Retry-After` si está presente. Los errores de configuración (p. ej.
+    `RuntimeError` por clave faltante) y los 4xx no reintentables se propagan.
+    """
+    import time
+
+    import requests
+
+    attempt = 0
+    while True:
+        try:
+            return judge.judge(hate_tweet, counter_narrative)
+        except RuntimeError:
+            raise
+        except requests.exceptions.RequestException as exc:
+            response = getattr(exc, "response", None)
+            status = getattr(response, "status_code", None)
+            retryable = status is None or status == 429 or 500 <= status < 600
+            if attempt >= retries or not retryable:
+                raise
+            delay = base_delay * (2 ** attempt)
+            retry_after = getattr(response, "headers", {}).get("Retry-After")
+            if retry_after:
+                try:
+                    delay = max(delay, float(retry_after))
+                except (TypeError, ValueError):
+                    pass
+            time.sleep(delay)
+            attempt += 1
 
 
 def build_judge(judge_cfg):
@@ -138,16 +175,23 @@ def build_judge(judge_cfg):
         rubric=judge_cfg.rubric,
         max_tokens=judge_cfg.max_tokens,
         temperature=judge_cfg.temperature,
+        timeout=getattr(judge_cfg, "timeout", 120),
     )
 
 
-def judge_rows(judge: JudgeBackend, rows) -> list:
+def judge_rows(judge: JudgeBackend, rows, retries: int = 0, base_delay: float = 2.0) -> list:
     """Añade a cada fila los puntajes del juez (columnas `judge_*`)."""
     updated = []
     for row in rows:
         new_row = dict(row)
         try:
-            scores = judge.judge(row["hate_speech"], row["generated_cn"])
+            scores = judge_with_retry(
+                judge,
+                row["hate_speech"],
+                row["generated_cn"],
+                retries=retries,
+                base_delay=base_delay,
+            )
         except Exception as exc:  # no interrumpir todo el experimento por un fallo
             scores = {"promedio": float("nan"), "error": str(exc)}
         for aspect, value in scores.items():
