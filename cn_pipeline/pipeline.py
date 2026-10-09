@@ -4,8 +4,10 @@ Un experimento consiste en: cargar datos -> cargar modelo -> generar
 contra-narrativas con las técnicas de prompt seleccionadas -> evaluar con
 métricas automáticas (y LLM-as-judge si está configurado) -> guardar resultados.
 
-Puede ejecutarse desde la notebook (`run_experiment`) o desde la línea de
-comandos (`python -m cn_pipeline.pipeline --config configs/config_gemma.json ...`).
+Se ejecuta desde la línea de comandos
+(`python -m cn_pipeline.pipeline --config configs/config_gemma.json ...`) o
+invocando `run_experiment` desde otro script. Para el barrido completo de
+configuraciones, usar `run_cross.py` en la raíz del repo.
 """
 
 from __future__ import annotations
@@ -51,41 +53,36 @@ def experiment_id(cfg: Config) -> str:
     return f"{model}_{cfg.language}_{extra}_{cn}_seed{cfg.seed}"
 
 
-def run_experiment(cfg: Config, run_judge: bool = True):
-    """Ejecuta el experimento descrito por `cfg`.
+def build_generator(cfg: Config, device=None) -> Generator:
+    """Carga el modelo/tokenizer de `cfg` (reutilizable entre corridas del mismo modelo)."""
+    if device is None:
+        device = resolve_device(cfg.device)
+    return Generator(
+        cfg.model_name,
+        device,
+        asdict(cfg.generation),
+        torch_dtype=cfg.torch_dtype,
+        quantization=cfg.quantization,
+    )
 
-    Si `run_judge=False` (p. ej. en un nodo sin red) se omite el LLM-as-judge;
-    las columnas `judge_*` quedan ausentes y pueden completarse luego con
-    `cn_pipeline.judge_results`.
 
-    Devuelve (detallado, resumen, directorio de salida).
+def prepare_experiment(cfg: Config, device=None):
+    """Fija la semilla y prepara datos, ejemplos few-shot/one-shot y contra-ejemplo.
+
+    Devuelve `(device, test, examples, counter_example)`.
     """
     set_seed(cfg.seed)
-    device = resolve_device(cfg.device)
-    print(f"[pipeline] device={device}, dtype={cfg.torch_dtype}")
+    if device is None:
+        device = resolve_device(cfg.device)
 
-    # 0. Juez (obligatorio a nivel workflow): valida modelo y clave temprano.
-    judge = None
-    if run_judge:
-        judge = build_judge(cfg.llm_judge)
-        print(f"[pipeline] LLM-as-judge: {cfg.llm_judge.model}")
-    else:
-        print(
-            "[pipeline] LLM-as-judge: omitido (--skip_judge). "
-            "Completar luego con `python -m cn_pipeline.judge_results`."
-        )
-
-    # 1. Datos.
     test, train, val = load_data(cfg.use_extra_info, cfg.cn_strategy)
     print(f"[pipeline] test={len(test)}, train={len(train)}, val={len(val)}")
 
-    # 2. Subconjunto de test (si max_samples está definido).
     if cfg.max_samples is not None and len(test) > cfg.max_samples:
         rng = np.random.RandomState(cfg.seed)
         indices = rng.choice(len(test), size=cfg.max_samples, replace=False)
         test = [test[i] for i in indices]
 
-    # 3. Ejemplos para few-shot / one-shot / CARE.
     needs_examples = any(PROMPTS[p].get("requiere_ejemplos") for p in cfg.prompt_types)
     needs_counter = any(
         "{contra_ejemplo}" in PROMPTS[p]["plantilla"] for p in cfg.prompt_types
@@ -97,16 +94,11 @@ def run_experiment(cfg: Config, run_judge: bool = True):
     if needs_counter:
         counter_example = sample_counter_narrative(train, val, cfg.seed)
 
-    # 4. Modelo.
-    generator = Generator(
-        cfg.model_name,
-        device,
-        asdict(cfg.generation),
-        torch_dtype=cfg.torch_dtype,
-        quantization=cfg.quantization,
-    )
+    return device, test, examples, counter_example
 
-    # 5. Generación.
+
+def generate_rows(cfg: Config, test, examples, counter_example, generator: Generator) -> list:
+    """Genera las contra-narrativas para `test` con `cfg.prompt_types`."""
     tipo_instruccion = CN_TYPE_INSTRUCTIONS.get(cfg.cn_strategy, "")
     usar_info = injects_info(cfg.use_extra_info, cfg.cn_strategy)
     rows = []
@@ -132,32 +124,58 @@ def run_experiment(cfg: Config, run_judge: bool = True):
                 }
             )
     print(f"[pipeline] generadas {len(rows)} contra-narrativas")
+    return rows
 
-    # 6. Evaluación (métricas automáticas + LLM-as-judge).
+
+def finalize_experiment(cfg: Config, rows, run_judge: bool = False, judge=None):
+    """Evalúa (juez opcional + métricas) y guarda los resultados de `cfg`."""
     if run_judge:
         print("[pipeline] evaluando con LLM-as-judge...")
         rows = judge_rows(judge, rows, retries=3)
 
     detailed, summary = evaluate_predictions(rows, metrics=cfg.metrics)
 
-    # 7. Guardar resultados.
     exp_id = experiment_id(cfg)
     out_dir = os.path.join(cfg.output_dir, exp_id)
     os.makedirs(out_dir, exist_ok=True)
 
-    detailed_path = os.path.join(out_dir, "results.csv")
-    summary_path = os.path.join(out_dir, "summary.csv")
-    config_path = os.path.join(out_dir, "config.json")
-    anecdotal_path = os.path.join(out_dir, "anecdotal.txt")
-
-    detailed.to_csv(detailed_path, index=False)
-    summary.to_csv(summary_path, index=False)
-    save_config(cfg, config_path)
-    _save_anecdotal(rows, anecdotal_path)
+    detailed.to_csv(os.path.join(out_dir, "results.csv"), index=False)
+    summary.to_csv(os.path.join(out_dir, "summary.csv"), index=False)
+    save_config(cfg, os.path.join(out_dir, "config.json"))
+    _save_anecdotal(rows, os.path.join(out_dir, "anecdotal.txt"))
 
     print(f"[pipeline] resultados en {out_dir}/")
     print(summary.to_markdown(index=False))
     return detailed, summary, out_dir
+
+
+def run_experiment(cfg: Config, run_judge: bool = True):
+    """Ejecuta el experimento descrito por `cfg`.
+
+    Si `run_judge=False` (p. ej. en un nodo sin red) se omite el LLM-as-judge;
+    las columnas `judge_*` quedan ausentes y pueden completarse luego con
+    `cn_pipeline.judge_results`.
+
+    Devuelve (detallado, resumen, directorio de salida).
+    """
+    device = resolve_device(cfg.device)
+    print(f"[pipeline] device={device}, dtype={cfg.torch_dtype}")
+
+    # Juez (obligatorio a nivel workflow): valida modelo y clave temprano.
+    judge = None
+    if run_judge:
+        judge = build_judge(cfg.llm_judge)
+        print(f"[pipeline] LLM-as-judge: {cfg.llm_judge.model}")
+    else:
+        print(
+            "[pipeline] LLM-as-judge: omitido (--skip_judge). "
+            "Completar luego con `python -m cn_pipeline.judge_results`."
+        )
+
+    _, test, examples, counter_example = prepare_experiment(cfg, device)
+    generator = build_generator(cfg, device)
+    rows = generate_rows(cfg, test, examples, counter_example, generator)
+    return finalize_experiment(cfg, rows, run_judge=run_judge, judge=judge)
 
 
 def _save_anecdotal(rows, path: str) -> None:
