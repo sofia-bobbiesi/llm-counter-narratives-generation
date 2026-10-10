@@ -44,7 +44,7 @@ def run_model(model_key: str, args) -> dict:
     """Corre las 10 configuraciones de un modelo. Devuelve conteos ok/skip/fail."""
     base = load_config(f"configs/config_{model_key}.json")
     base.seed = args.seed
-    base.output_dir = args.outputs
+    base.output_dir = os.path.join(args.outputs, base.model_name.split("/")[-1])
     if args.max_samples is not None:
         base.max_samples = args.max_samples
     if args.prompt_types:

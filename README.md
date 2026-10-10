@@ -57,7 +57,7 @@ ver `cn_pipeline/prompts.py`), `cn_strategy` (`""` | `a` | `b` | `c` |
 
 ## Salidas
 
-`outputs/<modelo>_<idioma>_<info>_<cn-strategy>_seed<seed>/` con:
+`outputs/<modelo>/<run_id>/`, con `<run_id>` = `<modelo>_<idioma>_<info>_<cn-strategy>_seed<seed>`:
 
 - `results.csv`: una fila por `<tweet, técnica>` con la generación, las
   métricas (BLEU, ROUGE-1/2/L, BERT-F1) y las columnas `judge_*` si corrió el juez.
