@@ -45,12 +45,16 @@ def set_seed(seed: int) -> None:
         torch.cuda.manual_seed_all(seed)
 
 
-def experiment_id(cfg: Config) -> str:
-    """Identificador legible del experimento, usado para el directorio de salida."""
+def experiment_id(cfg: Config, suffix: str = "") -> str:
+    """Identificador legible del experimento, usado para el directorio de salida.
+
+    `suffix` permite distinguir corridas que comparten config pero varían algún
+    parámetro no incluido en el nombre (p. ej. `_fs5` para la curva de few-shot).
+    """
     model = cfg.model_name.split("/")[-1]
     extra = cfg.use_extra_info or "no-info"
     cn = cfg.cn_strategy or "no-strategy"
-    return f"{model}_{cfg.language}_{extra}_{cn}_seed{cfg.seed}"
+    return f"{model}_{cfg.language}_{extra}_{cn}_seed{cfg.seed}{suffix}"
 
 
 def build_generator(cfg: Config, device=None) -> Generator:
@@ -66,10 +70,11 @@ def build_generator(cfg: Config, device=None) -> Generator:
     )
 
 
-def prepare_experiment(cfg: Config, device=None):
+def prepare_experiment(cfg: Config, device=None, nested_examples: bool = False):
     """Fija la semilla y prepara datos, ejemplos few-shot/one-shot y contra-ejemplo.
 
-    Devuelve `(device, test, examples, counter_example)`.
+    `nested_examples=True` usa muestreo anidado de los ejemplos (para las curvas
+    de few-shot). Devuelve `(device, test, examples, counter_example)`.
     """
     set_seed(cfg.seed)
     if device is None:
@@ -89,7 +94,8 @@ def prepare_experiment(cfg: Config, device=None):
     )
     examples: Optional[list] = None
     if needs_examples:
-        examples = sample_examples(train, val, cfg.fewshot_examples, cfg.seed)
+        examples = sample_examples(train, val, cfg.fewshot_examples, cfg.seed,
+                                   nested=nested_examples)
     counter_example: Optional[str] = None
     if needs_counter:
         counter_example = sample_counter_narrative(train, val, cfg.seed)
@@ -127,15 +133,19 @@ def generate_rows(cfg: Config, test, examples, counter_example, generator: Gener
     return rows
 
 
-def finalize_experiment(cfg: Config, rows, run_judge: bool = False, judge=None):
-    """Evalúa (juez opcional + métricas) y guarda los resultados de `cfg`."""
+def finalize_experiment(cfg: Config, rows, run_judge: bool = False, judge=None,
+                        dir_suffix: str = ""):
+    """Evalúa (juez opcional + métricas) y guarda los resultados de `cfg`.
+
+    `dir_suffix` se agrega al nombre del directorio de salida (p. ej. `_fs5`).
+    """
     if run_judge:
         print("[pipeline] evaluando con LLM-as-judge...")
         rows = judge_rows(judge, rows, retries=3)
 
     detailed, summary = evaluate_predictions(rows, metrics=cfg.metrics)
 
-    exp_id = experiment_id(cfg)
+    exp_id = experiment_id(cfg, suffix=dir_suffix)
     out_dir = os.path.join(cfg.output_dir, exp_id)
     os.makedirs(out_dir, exist_ok=True)
 

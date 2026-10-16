@@ -54,10 +54,19 @@ def load_data(use_extra_info: str = "", cn_strategy: str = ""):
     return test, train, val
 
 
-def sample_examples(train: List[dict], val: List[dict], n: int, seed: int) -> List[dict]:
-    """Muestrea `n` ejemplos (tweet + contra-narrativa) de train+val para few-shot."""
+def sample_examples(train: List[dict], val: List[dict], n: int, seed: int,
+                    nested: bool = False) -> List[dict]:
+    """Muestrea `n` ejemplos (tweet + contra-narrativa) de train+val para few-shot.
+
+    Con `nested=True` se mezcla todo el pool una vez (seed fija) y se toman los
+    primeros `n`, de modo que los conjuntos son anidados (n=1 ⊂ n=3 ⊂ n=5 ...).
+    Es el modo usado por las curvas de few-shot para aislar el efecto de la
+    cantidad de ejemplos.
+    """
     pool = train + val
     rng = random.Random(seed)
+    if nested:
+        return rng.sample(pool, len(pool))[:n]
     return rng.sample(pool, min(n, len(pool)))
 
 
