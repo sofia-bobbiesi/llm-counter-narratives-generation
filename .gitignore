@@ -173,3 +173,4 @@ cython_debug/
 
 # Anecdóticos de corridas
 outputs/**/anecdotal.txt
+outputs_curves/**/anecdotal.txt
