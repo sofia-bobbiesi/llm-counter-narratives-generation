@@ -5,6 +5,11 @@ internet) del juicio (que requiere acceso al endpoint del juez). Se lee un
 `results.csv` ya generado, se puntúan las filas con el LLM-as-judge y se
 reescriben `results.csv` (agregando las columnas `judge_*`) y `summary.csv`.
 
+Los aspectos y escalas son los de la rúbrica de `cn_pipeline.llm_judge`
+(alineados con la anotación humana del grupo); `judge_promedio` se calcula en
+código como media normalizada (0-1) de los cuatro aspectos, igual que en el
+juez in-pipeline.
+
 Uso:
     python -m cn_pipeline.judge_results --config configs/config_gemma.json \\
         --run_dir outputs/<exp_id> [--resume]
@@ -23,7 +28,7 @@ import pandas as pd
 
 from .config import add_judge_args, apply_judge_overrides, load_config
 from .evaluation import summarize
-from .llm_judge import build_judge, judge_with_retry
+from .llm_judge import JUDGE_ASPECTS, build_judge, judge_promedio, judge_with_retry
 
 REQUIRED_COLUMNS = ("hate_speech", "generated_cn")
 
@@ -96,9 +101,18 @@ def judge_results_dir(
                 base_delay=base_delay,
             )
         except Exception as exc:  # no interrumpir el resto por un fallo puntual
-            scores = {"promedio": float("nan"), "error": str(exc)}
-        scores_by_index[idx] = {f"judge_{k}": v for k, v in scores.items()}
-        print(f"[judge] {i}/{len(indices)} -> promedio={scores.get('promedio')}")
+            scores = {"error": str(exc)}
+        row_scores = {f"judge_{k}": v for k, v in scores.items() if k in JUDGE_ASPECTS}
+        # Garantizar las cuatro columnas de aspectos (NaN si el juez las omitió)
+        for aspect in JUDGE_ASPECTS:
+            row_scores.setdefault(f"judge_{aspect}", float("nan"))
+        # El promedio se calcula en código: media normalizada (0-1) de los
+        # cuatro aspectos, igual que el juez in-pipeline (`judge_rows`).
+        row_scores["judge_promedio"] = judge_promedio(row_scores)
+        if "error" in scores:
+            row_scores["judge_error"] = scores["error"]
+        scores_by_index[idx] = row_scores
+        print(f"[judge] {i}/{len(indices)} -> promedio={row_scores['judge_promedio']}")
 
     # Limpiar errores previos de las filas rejuzgadas y mergear los puntajes.
     judged = list(scores_by_index.keys())

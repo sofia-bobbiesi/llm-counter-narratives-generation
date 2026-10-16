@@ -5,27 +5,77 @@ compatible con OpenAI. Se ejecuta en todos los experimentos: el modelo debe
 configurarse en `llm_judge.model` y la clave se lee de la variable de entorno
 indicada en `llm_judge.api_key_env` (por defecto `LLM_JUDGE_API_KEY`).
 
-La rúbrica por defecto puntúa de 1 a 5 los aspectos: adecuación, informatividad,
-coherencia interna y ausencia de ofensividad. Si el juez falla en una
-contra-narrativa puntual, esa fila se registra con `NaN` y no interrumpe la
-corrida.
+La rúbrica por defecto está alineada con la anotación humana del grupo sobre el
+mismo corpus (Furman et al. 2023b; repo `DamiFur/CounterNarrativesEvaluation`):
+usa sus aspectos y escalas — ofensividad (offensive, 1–3), stance frente al
+mensaje (1–3), informatividad (informativeness, 0–3) y apropiación como
+contra-narrativa (felicity, 1–3) — con anclas por punto redactadas de forma
+operativa para el juez. La dirección de cada escala también es una definición
+operativa propia (a validar contra el corpus etiquetado del grupo cuando se
+corra la calibración). `judge_promedio` se calcula en código como media
+normalizada (0–1) de los aspectos, nunca lo calcula el modelo. Si el juez falla
+en una contra-narrativa puntual, esa fila se registra con `NaN` y no interrumpe
+la corrida.
 """
 
 from __future__ import annotations
 
 import json
+import math
 import os
 from abc import ABC, abstractmethod
 
+# Aspectos y escalas del juez, alineados con el corpus etiquetado del grupo
+# (repo DamiFur/CounterNarrativesEvaluation): aspecto -> (mínimo, máximo).
+JUDGE_ASPECTS = {
+    "offensive": (1, 3),
+    "stance": (1, 3),
+    "informativeness": (0, 3),
+    "felicity": (1, 3),
+}
+
+# Dirección de cada escala (definiciones operativas propias; ver docstring y
+# rúbrica): función que mapea el valor crudo a una calidad en [0, 1].
+JUDGE_QUALITY = {
+    "offensive": lambda v: (3.0 - v) / 2.0,   # 1 (nada ofensiva) -> 1 ; 3 -> 0
+    "stance": lambda v: (v - 1.0) / 2.0,      # 1 (no refuta) -> 0 ; 3 (refuta) -> 1
+    "informativeness": lambda v: v / 3.0,     # 0 (cliché) -> 0 ; 3 (específica) -> 1
+    "felicity": lambda v: (v - 1.0) / 2.0,    # 1 (no funciona) -> 0 ; 3 -> 1
+}
+
+# Definición de los cuatro aspectos (con anclas). Fuente única compartida por el
+# juez 1 (que puntúa) y el juez 2 (`validate_judge.py`, que compara por pares).
+ASPECT_CRITERIA = (
+    "offensive — ofensividad de la respuesta (1–3): 1 = nada ofensiva; 2 = "
+    "levemente descalificadora o hiriente; 3 = claramente ofensiva hacia el "
+    "colectivo atacado.\n"
+    "stance — refutación del mensaje de odio (1–3): 1 = no refuta el mensaje (lo "
+    "ignora, cambia de tema o llega a apoyarlo); 2 = refutación parcial o "
+    "genérica; 3 = refuta directamente el mensaje o su argumento central.\n"
+    "informativeness — contenido informativo que aporta (0–3): 0 = no aporta "
+    "información (solo atribuye culpa o es un cliché); 1 = aporta algo de "
+    "contenido; 2 = contenido relevante pero parcial; 3 = aporta información "
+    "concreta y relevante (datos o refutación específica del argumento o del "
+    "colectivo).\n"
+    "felicity — apropiación como contra-narrativa en una intervención real "
+    "(1–3): 1 = no funcionaría como respuesta al mensaje; 2 = funcionamiento "
+    "dudoso (vaga, se pierde del tweet o no está dirigida a una audiencia "
+    "amplia); 3 = muy apropiada: no es agresiva, ayuda a desescalar y a "
+    "construir una contra-narrativa.\n"
+)
+
 DEFAULT_RUBRIC = (
     "Actuá como evaluador experto de contra-narrativas contra el discurso de odio. "
-    "Dado un tweet de odio y una contra-narrativa, puntuá de 1 (muy malo) a 5 "
-    "(muy bueno) cada uno de los siguientes aspectos: adecuación (si responde "
-    "adecuadamente al tweet de odio), informatividad (cuán específica o genérica "
-    "es), coherencia (coherencia interna) y ausencia de ofensividad (que no "
-    "incite al odio). Respondé SOLO con un objeto JSON con esta forma:\n"
-    '{{"adecuacion": n, "informatividad": n, "coherencia": n, "no_ofensividad": n, "promedio": n}}\n\n'
-    "Tweet de odio: {hate_tweet}\n"
+    "Dado un mensaje de odio y una contra-narrativa candidata, puntuá los cuatro "
+    "aspectos siguientes con sus escalas (solo valores enteros dentro de la "
+    "escala). Usá la escala completa: otorgá el valor máximo únicamente cuando el "
+    "aspecto sea claramente notable, y penalizá las respuestas genéricas o de "
+    "fórmula.\n\n"
+    + ASPECT_CRITERIA
+    + "\n"
+    "Respondé SOLO con un objeto JSON con esta forma:\n"
+    '{{"offensive": n, "stance": n, "informativeness": n, "felicity": n}}\n\n'
+    "Mensaje de odio: {hate_tweet}\n"
     "Contra-narrativa: {counter_narrative}"
 )
 
@@ -179,8 +229,33 @@ def build_judge(judge_cfg):
     )
 
 
+def judge_promedio(scores: dict) -> float:
+    """Media normalizada (0–1) de los aspectos del juez; NaN si falta alguno.
+
+    `scores` admite claves del backend (`offensive`) o de fila
+    (`judge_offensitive`... `judge_offensive`). Se calcula en código, nunca por
+    el modelo, para que sea determinista y comparable.
+    """
+    values = []
+    for aspect, quality in JUDGE_QUALITY.items():
+        v = scores.get(aspect, scores.get(f"judge_{aspect}", float("nan")))
+        try:
+            v = float(v)
+        except (TypeError, ValueError):
+            return float("nan")
+        if math.isnan(v):
+            return float("nan")
+        values.append(quality(v))
+    return sum(values) / len(values)
+
+
 def judge_rows(judge: JudgeBackend, rows, retries: int = 0, base_delay: float = 2.0) -> list:
-    """Añade a cada fila los puntajes del juez (columnas `judge_*`)."""
+    """Añade a cada fila los puntajes del juez (columnas `judge_*`).
+
+    Cada aspecto se recorta a su escala (`JUDGE_ASPECTS`); un aspecto ausente
+    queda como `NaN`. `judge_promedio` es la media normalizada (0–1) calculada
+    en código con `judge_promedio()`: NaN si falta algún aspecto.
+    """
     updated = []
     for row in rows:
         new_row = dict(row)
@@ -193,8 +268,15 @@ def judge_rows(judge: JudgeBackend, rows, retries: int = 0, base_delay: float = 
                 base_delay=base_delay,
             )
         except Exception as exc:  # no interrumpir todo el experimento por un fallo
-            scores = {"promedio": float("nan"), "error": str(exc)}
-        for aspect, value in scores.items():
-            new_row[f"judge_{aspect}"] = value
+            scores = {"error": str(exc)}
+        for aspect, (low, high) in JUDGE_ASPECTS.items():
+            value = scores.get(aspect)
+            if isinstance(value, (int, float)) and not math.isnan(value):
+                new_row[f"judge_{aspect}"] = float(min(max(value, low), high))
+            else:
+                new_row[f"judge_{aspect}"] = float("nan")
+        new_row["judge_promedio"] = judge_promedio(new_row)
+        if "error" in scores:
+            new_row["judge_error"] = scores["error"]
         updated.append(new_row)
     return updated
