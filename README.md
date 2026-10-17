@@ -76,6 +76,9 @@ python dataset_stats.py                  # estadísticas del corpus
 
 ## Notas
 
+- El corpus de `dataset/` proviene de
+  [ConeasDataset/CONEAS](https://github.com/ConeasDataset/CONEAS): es una copia
+  subconjunto `dataset/ASOHMO/spanish` (commit `071003ca`).
 - El parser del corpus y la inyección de información argumentativa se adaptan de
   [DamiFur/counter-narratives-generation](https://github.com/DamiFur/counter-narratives-generation).
 - En las corridas con tipo, el juez usa la config guardada en el run dir;
