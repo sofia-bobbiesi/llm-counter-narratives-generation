@@ -9,7 +9,6 @@ cn_pipeline/            Paquete con el pipeline
 run_cross.py            Cross completo de la fase 1 (10 configs × técnicas, por modelo)
 compare_experiments.py  Comparación de corridas (matrices + tests emparejados)
 dataset_stats.py        Estadísticas del corpus
-load_dataset.py         Parser original de ASOHMO (.conll/.cn)
 configs/                Un JSON por modelo (config_gemma, config_llama, config_mistral)
 dataset/ASOHMO/spanish/{test,train,dev}   Corpus
 outputs/                Resultados, un directorio por corrida

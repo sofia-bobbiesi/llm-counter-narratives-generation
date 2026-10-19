@@ -20,7 +20,7 @@ Formato de los .conll (columnas separadas por tabulador, una por token):
     8: tipo de la conclusión (fact/value/policy)
 
 Un tweet es no argumentativo si alguna de sus líneas tiene "NoArgumentative"
-en la columna 1 (criterio del parser original `load_dataset.py`).
+en la columna 1 (criterio del parser original en `cn_pipeline/data.py`).
 
 Formato de los .cn: una línea por tipo de contra-narrativa (línea 0 = tipo A,
 línea 1 = tipo B, línea 2 = tipo C), vacía si no se escribió ese tipo.
