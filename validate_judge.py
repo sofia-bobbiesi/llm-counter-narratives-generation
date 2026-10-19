@@ -232,18 +232,33 @@ def resolve(prefer: str, gen_in: str) -> str:
 
 
 def humanize_reason(reason: str, gen_in: str) -> str:
-    """Reemplaza 'A'/'B' sueltas por 'la propuesta generada/humana'.
+    """Reemplaza las referencias de lado ('A'/'B') por 'la respuesta generada/humana'.
 
-    El juez 2 redacta el motivo refiriéndose a los lados "A"/"B" (prompt ciego);
-    acá se traduce al lado real usando `gen_in`, sin guardar la columna del lado.
-    Solo reemplaza letras sueltas (límite de palabra), así no rompe palabras como
-    "Aporta" ni preposiciones.
+    El juez 2 redacta el motivo con los lados "A"/"B" (prompt ciego); acá se
+    traduce al lado real usando `gen_in`, sin guardar la columna del lado. Se
+    normalizan las formas "la respuesta/opción/propuesta X", "la X" y "X" suelta
+    a una única frase, para no duplicar artículos. Solo considera letras A/B
+    mayúsculas sueltas (no rompe preposiciones ni palabras como "Aporta").
     """
     if not reason:
         return reason
-    labels = ({"A": "la propuesta generada", "B": "la propuesta humana"} if gen_in == "A"
-              else {"A": "la propuesta humana", "B": "la propuesta generada"})
-    return re.sub(r"\b([AB])\b", lambda m: labels[m.group(1)], reason)
+    label = ({"A": "generada", "B": "humana"} if gen_in == "A"
+             else {"A": "humana", "B": "generada"})
+
+    def phrase(match):
+        return f"la respuesta {label[match.group(1)]}"
+
+    text = reason
+    text = re.sub(r"[Ll]a\s+(?:respuesta|opci[oó]n|propuesta)\s+([AB])\b", phrase, text)
+    text = re.sub(r"[Ll]a\s+([AB])\b", phrase, text)
+    text = re.sub(r"\b([AB])\b", phrase, text)
+    # Capitalizar si la referencia quedó al inicio de oración.
+    text = re.sub(
+        r"(^|[.!?]\s+)(la respuesta (?:generada|humana))",
+        lambda m: m.group(1) + m.group(2)[0].upper() + m.group(2)[1:],
+        text,
+    )
+    return text
 
 
 # ---------------------------------------------------------------------------
