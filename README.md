@@ -7,7 +7,9 @@ Generación de contra-narrativas contra el discurso de odio mediante técnicas d
 ```
 cn_pipeline/            Paquete con el pipeline
 run_cross.py            Cross completo de la fase 1 (10 configs × técnicas, por modelo)
-compare_experiments.py  Comparación de corridas (matrices + tests emparejados)
+analysis/               Análisis de resultados
+  compare_experiments.py  Resumen de corridas (jueces + automáticas)
+  compare_models.py       Comparación por modelo (compacto, detalle, signos, ranking)
 dataset_stats.py        Estadísticas del corpus
 configs/                Un JSON por modelo (config_gemma, config_llama, config_mistral)
 dataset/ASOHMO/spanish/{test,train,dev}   Corpus
@@ -67,9 +69,9 @@ ver `cn_pipeline/prompts.py`), `cn_strategy` (`""` | `a` | `b` | `c` |
 ## Análisis
 
 ```bash
-python compare_experiments.py            # matriz técnica (x modelo) por métrica
-python compare_experiments.py --paired   # + tests emparejados por tweet
-python compare_experiments.py --strict   # falla si falta el juez
+python analysis/compare_experiments.py --outputs outputs/gemma-4-12B-it   # resumen de un modelo
+python analysis/compare_models.py --save reports/summary_models.md        # comparación entre modelos
+python analysis/compare_experiments.py --strict                           # falla si falta el juez
 python dataset_stats.py                  # estadísticas del corpus
 ```
 
