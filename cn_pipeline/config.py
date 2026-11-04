@@ -55,6 +55,7 @@ class LLMJudgeConfig:
     rubric: Optional[str] = None  # None -> rúbrica por defecto de llm_judge
     max_tokens: int = 300
     temperature: float = 0.0
+    timeout: int = 120  # timeout por request (segundos)
 
 
 @dataclass
@@ -139,6 +140,23 @@ _GENERATION_FIELDS = [
 ]
 
 
+_JUDGE_FIELDS = [
+    "model",
+    "base_url",
+    "api_key_env",
+    "rubric",
+    "max_tokens",
+    "temperature",
+    "timeout",
+]
+
+
+def add_judge_args(parser: argparse.ArgumentParser) -> None:
+    """Agrega al parser los overrides de `llm_judge` (prefijo `--judge_`)."""
+    for field_name in _JUDGE_FIELDS:
+        parser.add_argument(f"--judge_{field_name}", type=str, default=None)
+
+
 def build_parser() -> argparse.ArgumentParser:
     """Parser de línea de comandos. Todos los argumentos son opcionales y
     sobreescriben la configuración cargada desde archivo."""
@@ -161,6 +179,17 @@ def build_parser() -> argparse.ArgumentParser:
     )
     for field_name in _GENERATION_FIELDS:
         parser.add_argument(f"--{field_name}", type=str, default=None)
+    parser.add_argument(
+        "--skip_judge",
+        action="store_true",
+        default=False,
+        help=(
+            "Genera y calcula métricas automáticas sin ejecutar el LLM-as-judge "
+            "(útil en un nodo sin red). Completar luego con "
+            "`python -m cn_pipeline.judge_results`."
+        ),
+    )
+    add_judge_args(parser)
     return parser
 
 
@@ -213,7 +242,19 @@ def apply_overrides(cfg: Config, args: argparse.Namespace) -> Config:
                 field_name,
                 _coerce(value, gen_types[field_name]),
             )
+
+    apply_judge_overrides(cfg.llm_judge, args)
     return cfg
+
+
+def apply_judge_overrides(judge_cfg: LLMJudgeConfig, args: argparse.Namespace) -> LLMJudgeConfig:
+    """Aplica al `judge_cfg` solo los overrides `--judge_*` provistos (no None)."""
+    judge_types = _field_types(LLMJudgeConfig)
+    for field_name in _JUDGE_FIELDS:
+        value = getattr(args, f"judge_{field_name}", None)
+        if value is not None:
+            setattr(judge_cfg, field_name, _coerce(value, judge_types[field_name]))
+    return judge_cfg
 
 
 def resolve_device(device: str):

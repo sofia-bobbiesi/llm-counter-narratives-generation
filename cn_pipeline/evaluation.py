@@ -18,7 +18,6 @@ from __future__ import annotations
 
 import ast
 
-import evaluate
 import pandas as pd
 
 DEFAULT_BERT_MODEL = "dccuchile/bert-base-spanish-wwm-cased"
@@ -76,6 +75,8 @@ def evaluate_predictions(
     references = [refs or [""] for refs in references]
 
     if "bleu" in metrics:
+        import evaluate
+
         bleu = evaluate.load("bleu")
         detailed["BLEU"] = [
             max(bleu.compute(predictions=[p], references=[[r]])["bleu"] for r in refs)
@@ -83,6 +84,8 @@ def evaluate_predictions(
         ]
 
     if "rouge" in metrics:
+        import evaluate
+
         rouge = evaluate.load("rouge")
         r1, r2, rl = [], [], []
         for p, refs in zip(predictions, references):

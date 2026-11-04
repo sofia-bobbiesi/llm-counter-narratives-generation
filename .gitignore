@@ -169,3 +169,8 @@ cython_debug/
 
 # PyPI configuration file
 .pypirc
+
+
+# Anecdóticos de corridas
+outputs/**/anecdotal.txt
+outputs_curves/**/anecdotal.txt
